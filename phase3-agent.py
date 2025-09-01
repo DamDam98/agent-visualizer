@@ -15,24 +15,52 @@ Goal: Main research agent with memory management capabilities
     "findings": [
         {
             "content": "NYC population is 8.3 million",
-            "source": "search_tool",
+            "source": "search_tool", 
             "confidence": "high",
             "related_questions": ["What is the population of NYC?"],
             "timestamp": "2024-01-01T12:00:00"
         }
     ],
     "open_questions": [
-        "What is the population of NYC?",
-        "What is the population of San Francisco?"
-    ],
-    "closed_questions": [
         {
             "question": "What is the population of NYC?",
-            "status": "closed_complete",
+            "added": "2024-01-01T12:00:00",
+            "priority": "high"
+        },
+        {
+            "question": "What is the population of San Francisco?", 
+            "added": "2024-01-01T12:05:00",
+            "priority": "medium"
+        }
+    ],
+    "closed_questions_complete": [
+        {
+            "question": "What is the population of NYC?",
             "answer": "8.3 million people",
-            "evidence": ["Search result from census data"],
+            "evidence": ["Search result from census data", "NYC.gov official statistics"],
             "confidence": "high",
             "closed": "2024-01-01T12:00:00"
+        }
+    ],
+    "closed_questions_partial": [
+        {
+            "question": "What are the top grossing games of 2024?",
+            "partial_answer": "Found data for top 3 games but revenue figures incomplete",
+            "limitations": ["Exact revenue numbers not publicly available", "Only Q1-Q3 data found"],
+            "available_evidence": ["Gaming industry reports", "Partial financial data"],
+            "confidence": "medium",
+            "closed": "2024-01-01T12:10:00"
+        }
+    ],
+    "unhelpful_searches": [
+        {
+            "query": "exact revenue Fortnite 2024",
+            "source": "search_tool",
+            "reason": "No specific revenue data available - Epic Games doesn't publish exact figures",
+            "partial_info": "Found general industry estimates and player counts",
+            "potential_followups": ["industry estimates Fortnite revenue", "Epic Games financial reports"],
+            "related_questions": ["What are the top grossing games of 2024?"],
+            "timestamp": "2024-01-01T12:08:00"
         }
     ]
 }
@@ -97,9 +125,18 @@ def create_empty_research_document() -> dict:
     return {
         # List of finding objects: {"content": str, "source": str, "confidence": str, "related_questions": List[str], "timestamp": str}
         "findings": [],
-        "open_questions": [],  # List of question strings: "What is the population of NYC?"
-        # List of closed question objects: {"question": str, "status": str, "answer": str, "evidence": List[str], "confidence": str, "closed": str}
-        "closed_questions": []
+
+        # List of open question objects: {"question": str, "added": str, "priority": str}
+        "open_questions": [],
+
+        # List of fully answered questions: {"question": str, "answer": str, "evidence": List[str], "confidence": str, "closed": str}
+        "closed_questions_complete": [],
+
+        # List of partially answered questions: {"question": str, "partial_answer": str, "limitations": List[str], "available_evidence": List[str], "confidence": str, "closed": str}
+        "closed_questions_partial": [],
+
+        # List of unsuccessful searches: {"query": str, "source": str, "reason": str, "partial_info": str, "potential_followups": List[str], "related_questions": List[str], "timestamp": str}
+        "unhelpful_searches": []
     }
 
 
@@ -387,97 +424,8 @@ def conclusion_node(state: AgentState) -> AgentState:
         }
 
 
-# Memory Subagent Tool - REMOVED
-# Now using direct orchestrator → memory_agent_reasoner routing instead of tool calls
-
-
-# ============================================================================
-# ORCHESTRATOR AGENT TOOLS & NODES
-# ============================================================================
-
-# Orchestrator tools - for main research agent
-# orchestrator_analysis_tools removed - using direct routing to data_analysis_node
-# orchestrator_search_tools removed - using direct routing to search_node
-# orchestrator_reflection_tools removed - using direct routing to reflection_node
-# orchestrator_conclusion_tools removed - using direct routing to conclusion_node
-# No more memory tools - direct routing to memory subagent instead
-# ALL TOOLS NOW USE NODE-TO-NODE ROUTING!
-all_orchestrator_tools = []
-
-# Create orchestrator tool nodes
-# data_analysis_tool_node removed - using direct data_analysis_node
-# search_tool_node removed - using direct search_node
-# reflection_tool_node removed - using direct reflection_node
-# conclusion_tool_node removed - using direct conclusion_node
-# ALL TOOL NODES REMOVED - COMPLETE NODE-TO-NODE ROUTING!
-# trigger_memory_subagent_tool_node removed - using direct routing now
-
-
-# ============================================================================
-# MEMORY OPERATIONS (TOOLS)
-# ============================================================================
-
-@tool
-def memory_add_open_question(question: str) -> str:
-    """Add a new research question to investigate.
-
-    Args:
-        question: The research question to add (e.g. "What is the population of NYC?")
-
-    Returns:
-        Confirmation message about the question being added
-    """
-    return f"Adding open question: {question}"
-
-
-# Memory operations - tools for memory agent
-memory_operations = [memory_add_open_question]
-
-# Create custom memory operations tool node that can modify state
-
-
-@traceable
-def memory_operations_tool_node(state: AgentState):
-    """Custom memory operations tool node that can access and modify research document"""
-
-    # Get the last message with tool calls
-    last_message = state["messages"][-1]
-    if not hasattr(last_message, 'tool_calls') or not last_message.tool_calls:
-        return {"messages": [AIMessage(content="No memory operations found")]}
-
-    # Process each tool call and modify the research document
-    results = []
-    for tool_call in last_message.tool_calls:
-        tool_name = tool_call["name"]
-        tool_args = tool_call["args"]
-
-        if tool_name == "memory_add_open_question":
-            question = tool_args.get("question", "").strip()
-
-            if question:
-                # Simply add to open_questions list in research_document
-                open_questions = state["research_document"]["open_questions"]
-                open_questions.append(question)
-
-                result = f"✅ Added open question: '{question}'"
-                print(f"   📝 {result}")
-                results.append(result)
-
-    # Return tool message with results
-    summary = "; ".join(
-        results) if results else "No memory operations performed"
-    return {"messages": [ToolMessage(content=summary, tool_call_id=last_message.tool_calls[0]["id"])]}
-
-
-# Initialize LLM for memory agent
-memory_agent_llm = ChatOpenAI(model="gpt-4o", temperature=0.1,
-                              api_key=os.getenv("OPENAI_API_KEY"))
-memory_agent_llm_with_tools = memory_agent_llm.bind_tools(memory_operations)
-
-# Initialize LLM for orchestrator
 llm = ChatOpenAI(model="gpt-4o", temperature=0,
                  api_key=os.getenv("OPENAI_API_KEY"))
-orchestrator_llm_with_tools = llm.bind_tools(all_orchestrator_tools)
 
 
 # ============================================================================
@@ -508,13 +456,13 @@ def initialization_node(state: AgentState) -> AgentState:
 def memory_agent_reasoner_node(state: AgentState) -> AgentState:
     """Memory agent reasoner - decides what memory operations to perform"""
 
-    # Build tool descriptions for memory operations dynamically
-    tool_descriptions = []
-    for tool in memory_operations:
-        sig = inspect.signature(tool.func)
-        tool_descriptions.append(f"- {tool.name}{sig}: {tool.description}")
-
-    memory_tools_text = "\n".join(tool_descriptions)
+    # Available memory operations (using node-to-node routing)
+    memory_tools_text = """
+    - ADD_OPEN_QUESTION: Add a new research question to investigate
+    - ADD_FINDING: Store helpful search results and findings
+    - LOG_UNHELPFUL_SEARCH: Track searches that didn't yield useful results
+    - CONCLUDE_MEMORY_PROCESSING: Finish memory processing and return to orchestrator
+    """
 
     # Get full research document
     doc = state.get("research_document", {})
@@ -531,13 +479,15 @@ def memory_agent_reasoner_node(state: AgentState) -> AgentState:
     Your role:
     1. Analyze the request to understand what memory operations are needed
     2. Break down complex requests into specific tool calls
-    3. You CAN recommend multiple tool calls in one response
-    4. Be specific about each operation needed
+    3. For questions, assess priority: HIGH (core research goal), MEDIUM (supporting info), LOW (nice-to-have)
+    4. You CAN recommend multiple tool calls in one response
+    5. Be specific about each operation needed
     
     Decide what memory operations to perform. Be specific about each tool call needed.
+    When adding questions, consider their importance to the overall research goal.
     """
 
-    reasoning_response = memory_agent_llm.invoke(
+    reasoning_response = llm.invoke(
         [SystemMessage(content=reasoning_prompt)])
     print(f"🧠 Memory Agent Reasoning: {reasoning_response.content}")
 
@@ -556,19 +506,40 @@ Look at the most recent reasoning message and decide what memory operation to pe
 
 Available operations:
 - ADD_OPEN_QUESTION: Add a new research question to track
+- ADD_FINDING: Store helpful search results and findings  
+- LOG_UNHELPFUL_SEARCH: Track searches that didn't yield useful results
+- CONCLUDE_MEMORY_PROCESSING: Finish memory processing and return to orchestrator
 
 Respond with your decision in this format:
 OPERATION: [operation_name]
 DETAILS: [what you want to do]
+Priority: [high/medium/low] (for questions only)
 
-For example:
+Examples:
 OPERATION: ADD_OPEN_QUESTION  
-DETAILS: What are the top 3 highest grossing video games?"""
+DETAILS: What are the top 3 highest grossing video games?
+Priority: high
+
+OPERATION: ADD_FINDING
+DETAILS: Content: NYC population is 8.3 million
+Source: search_tool
+Confidence: high
+Related_questions: What is the population of NYC?
+
+OPERATION: LOG_UNHELPFUL_SEARCH
+DETAILS: Query: exact revenue Fortnite 2024
+Reason: No specific revenue data available
+Partial_info: Found general industry estimates
+Potential_followups: industry estimates Fortnite revenue
+Related_questions: What are the top grossing games?
+
+OPERATION: CONCLUDE_MEMORY_PROCESSING
+DETAILS: Finished processing search results and updating research document"""
 
     # Combine the executor prompt with the conversation
     messages_with_guidance = [SystemMessage(
         content=executor_prompt)] + state["messages"]
-    action_response = memory_agent_llm.invoke(messages_with_guidance)
+    action_response = llm.invoke(messages_with_guidance)
 
     print(f"🔧 Memory Agent Executor Decision: {action_response.content}")
 
@@ -585,6 +556,12 @@ def memory_operation_router(state: AgentState) -> str:
 
     if "add_open_question" in content:
         return "add_open_question_node"
+    elif "log_unhelpful_search" in content:
+        return "log_unhelpful_search_node"
+    elif "add_finding" in content:
+        return "add_finding_node"
+    elif "conclude_memory_processing" in content:
+        return "conclude_memory_processing_node"
 
     # Default fallback
     print("⚠️ Memory operation router: No clear operation found, returning to orchestrator")
@@ -605,14 +582,31 @@ def add_open_question_node(state: AgentState) -> AgentState:
 
     # Parse the DETAILS section
     question = ""
+    priority = "medium"  # Default fallback
+
     if "DETAILS:" in content:
         details_part = content.split("DETAILS:")[1].strip()
-        question = details_part.split("\n")[0].strip()
+        lines = details_part.split("\n")
+        question = lines[0].strip()
+
+        # Look for priority in subsequent lines
+        for line in lines[1:]:
+            if line.strip().lower().startswith("priority:"):
+                priority = line.split(":", 1)[1].strip().lower()
+                break
 
     if question:
+        # Create structured question object
+        from datetime import datetime
+        question_obj = {
+            "question": question,
+            "added": datetime.now().isoformat(),
+            "priority": priority
+        }
+
         # Add to research document
         open_questions = state["research_document"]["open_questions"]
-        open_questions.append(question)
+        open_questions.append(question_obj)
 
         result_message = f"✅ Added open question: '{question}'"
         print(f"   📝 {result_message}")
@@ -628,6 +622,146 @@ def add_open_question_node(state: AgentState) -> AgentState:
         }
 
 
+@traceable
+def log_unhelpful_search_node(state: AgentState) -> AgentState:
+    """Log an unhelpful search to track unsuccessful queries"""
+
+    # Extract the search details from the executor's decision
+    last_message = state["messages"][-1]
+    content = last_message.content
+
+    # Parse the DETAILS section
+    query = ""
+    reason = ""
+    partial_info = ""
+    potential_followups = []
+    related_questions = []
+
+    if "DETAILS:" in content:
+        details_part = content.split("DETAILS:")[1].strip()
+        lines = details_part.split("\n")
+
+        current_field = None
+        for line in lines:
+            line = line.strip()
+            if line.lower().startswith("query:"):
+                query = line.split(":", 1)[1].strip()
+            elif line.lower().startswith("reason:"):
+                reason = line.split(":", 1)[1].strip()
+            elif line.lower().startswith("partial_info:"):
+                partial_info = line.split(":", 1)[1].strip()
+            elif line.lower().startswith("potential_followups:"):
+                followups_text = line.split(":", 1)[1].strip()
+                potential_followups = [
+                    f.strip() for f in followups_text.split(",") if f.strip()]
+            elif line.lower().startswith("related_questions:"):
+                questions_text = line.split(":", 1)[1].strip()
+                related_questions = [
+                    q.strip() for q in questions_text.split(",") if q.strip()]
+
+    if query and reason:
+        # Create structured unhelpful search object
+        from datetime import datetime
+        search_obj = {
+            "query": query,
+            "source": "search_tool",  # Default source
+            "reason": reason,
+            "partial_info": partial_info,
+            "potential_followups": potential_followups,
+            "related_questions": related_questions,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        # Add to research document
+        unhelpful_searches = state["research_document"]["unhelpful_searches"]
+        unhelpful_searches.append(search_obj)
+
+        result_message = f"✅ Logged unhelpful search: '{query}'"
+        print(f"   📝 {result_message}")
+
+        return {
+            "messages": [AIMessage(content=result_message)]
+        }
+    else:
+        error_message = "❌ Could not extract query and reason from executor decision"
+        print(f"   📝 {error_message}")
+        return {
+            "messages": [AIMessage(content=error_message)]
+        }
+
+
+@traceable
+def add_finding_node(state: AgentState) -> AgentState:
+    """Add a finding to the research document"""
+
+    # Extract the finding details from the executor's decision
+    last_message = state["messages"][-1]
+    content = last_message.content
+
+    # Parse the DETAILS section
+    finding_content = ""
+    source = "search_tool"  # Default source
+    confidence = "medium"   # Default confidence
+    related_questions = []
+
+    if "DETAILS:" in content:
+        details_part = content.split("DETAILS:")[1].strip()
+        lines = details_part.split("\n")
+
+        for line in lines:
+            line = line.strip()
+            if line.lower().startswith("content:"):
+                finding_content = line.split(":", 1)[1].strip()
+            elif line.lower().startswith("source:"):
+                source = line.split(":", 1)[1].strip()
+            elif line.lower().startswith("confidence:"):
+                confidence = line.split(":", 1)[1].strip().lower()
+            elif line.lower().startswith("related_questions:"):
+                questions_text = line.split(":", 1)[1].strip()
+                related_questions = [
+                    q.strip() for q in questions_text.split(",") if q.strip()]
+
+    if finding_content:
+        # Create structured finding object
+        from datetime import datetime
+        finding_obj = {
+            "content": finding_content,
+            "source": source,
+            "confidence": confidence,
+            "related_questions": related_questions,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        # Add to research document
+        findings = state["research_document"]["findings"]
+        findings.append(finding_obj)
+
+        result_message = f"✅ Added finding: '{finding_content[:50]}...'"
+        print(f"   📝 {result_message}")
+
+        return {
+            "messages": [AIMessage(content=result_message)]
+        }
+    else:
+        error_message = "❌ Could not extract finding content from executor decision"
+        print(f"   📝 {error_message}")
+        return {
+            "messages": [AIMessage(content=error_message)]
+        }
+
+
+@traceable
+def conclude_memory_processing_node(state: AgentState) -> AgentState:
+    """Conclude memory processing and return control to orchestrator"""
+
+    result_message = "✅ Memory processing complete - returning to orchestrator"
+    print(f"   📝 {result_message}")
+
+    return {
+        "messages": [AIMessage(content=result_message)]
+    }
+
+
 # ============================================================================
 # ORCHESTRATOR AGENT NODES
 # ============================================================================
@@ -635,13 +769,15 @@ def add_open_question_node(state: AgentState) -> AgentState:
 def orchestrator_reasoner_node(state: AgentState) -> AgentState:
     """Main research orchestrator reasoner - analyzes the situation and decides what to do next"""
 
-    # Build tool descriptions for the orchestrator
-    tool_descriptions = []
-    for tool in all_orchestrator_tools:
-        sig = inspect.signature(tool.func)
-        tool_descriptions.append(f"- {tool.name}{sig}: {tool.description}")
-
-    tools_text = "\n".join(tool_descriptions)
+    # Available operations for the orchestrator (using node-to-node routing)
+    tools_text = """
+    - MEMORY_MANAGEMENT: Trigger memory agent to log questions, findings, or unsuccessful searches
+    - DATA_ANALYSIS: Simple mathematical calculator (only basic expressions like '8.3 / 0.87' or '(1000 * 1.05^3)')
+      Note: For complex analysis, SEARCH for specific data points first, then use simple math
+    - SEARCH: Search the web for information using Perplexity
+    - REFLECTION: Think deeply about findings and research progress
+    - CONCLUSION: Complete research and provide final summary
+    """
 
     # Get full research document
     doc = state.get("research_document", {})
@@ -710,16 +846,19 @@ Look at the most recent reasoning message and decide what to do:
    "ROUTING: MEMORY_MANAGEMENT - [describe what memory operations are needed]"
 
 2. If the reasoner recommends DATA ANALYSIS (calculations, math), respond with:
-   "ROUTING: DATA_ANALYSIS - CALCULATION: [mathematical expression]"
+   "CALCULATION: [simple mathematical expression like '8.3 / 0.87' or '(1000 * 1.05^3)']"
+   
+   Note: Only provide basic mathematical expressions that can be directly evaluated. 
+   For complex analysis requiring data gathering, use SEARCH first to get the specific numbers needed.
 
 3. If the reasoner recommends SEARCH (web research, finding information), respond with:
-   "ROUTING: SEARCH - SEARCH: [search query]"
+   "SEARCH: [search query]"
 
 4. If the reasoner recommends REFLECTION (internal thinking, analysis), respond with:
-   "ROUTING: REFLECTION - REFLECTION: [thoughts to reflect on]"
+   "REFLECTION: [thoughts to reflect on]"
 
 5. If the reasoner recommends CONCLUSION (final answer, task completion), respond with:
-   "ROUTING: CONCLUSION - CONCLUSION: [summary of findings]"
+   "CONCLUSION: [summary of findings]"
 
 6. If the reasoner recommends using a TOOL, make the appropriate tool call.
 
@@ -736,8 +875,7 @@ Examples:
     # Combine the executor prompt with the conversation
     messages_with_guidance = [SystemMessage(
         content=executor_prompt)] + state["messages"]
-    action_response = orchestrator_llm_with_tools.invoke(
-        messages_with_guidance)
+    action_response = llm.invoke(messages_with_guidance)
 
     return {
         "messages": [action_response]
@@ -804,6 +942,10 @@ graph.add_node("memory_agent_executor", memory_agent_executor_node)
 
 # Add memory operation nodes
 graph.add_node("add_open_question_node", add_open_question_node)
+graph.add_node("log_unhelpful_search_node", log_unhelpful_search_node)
+graph.add_node("add_finding_node", add_finding_node)
+graph.add_node("conclude_memory_processing_node",
+               conclude_memory_processing_node)
 
 # Add initialization edges
 graph.add_edge(START, "initialization")
@@ -824,14 +966,21 @@ graph.add_conditional_edges("orchestrator_executor", orchestrator_router, {
 graph.add_edge("memory_agent_reasoner", "memory_agent_executor")
 graph.add_conditional_edges("memory_agent_executor", memory_operation_router, {
     "add_open_question_node": "add_open_question_node",
+    "log_unhelpful_search_node": "log_unhelpful_search_node",
+    "add_finding_node": "add_finding_node",
+    "conclude_memory_processing_node": "conclude_memory_processing_node",
     "orchestrator_reasoner": "orchestrator_reasoner"
 })
-# Back to orchestrator from memory operations
-graph.add_edge("add_open_question_node", "orchestrator_reasoner")
+# Memory operations self-loop back to memory agent reasoner (except conclude)
+graph.add_edge("add_open_question_node", "memory_agent_reasoner")
+graph.add_edge("log_unhelpful_search_node", "memory_agent_reasoner")
+graph.add_edge("add_finding_node", "memory_agent_reasoner")
+# Conclude goes back to orchestrator (EXIT from memory processing)
+graph.add_edge("conclude_memory_processing_node", "orchestrator_reasoner")
 
 # All nodes go back to the orchestrator reasoner EXCEPT conclusion_node which ends
 graph.add_edge("data_analysis_node", "orchestrator_reasoner")
-graph.add_edge("search_node", "orchestrator_reasoner")
+graph.add_edge("search_node", "memory_agent_reasoner")
 graph.add_edge("reflection_node", "orchestrator_reasoner")
 graph.add_edge("conclusion_node", END)
 
