@@ -1,0 +1,9 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "phase1_agent": "./phase1-agent.py:app",
+    "phase2_agent": "./phase2-agent.py:app",
+    "phase3_agent": "./phase3-agent.py:app"
+  },
+  "env": ".env"
+}
