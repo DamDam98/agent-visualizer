@@ -23,11 +23,13 @@ Goal: Main research agent with memory management capabilities
     ],
     "open_questions": [
         {
+            "id": "q1",
             "question": "What is the population of NYC?",
             "added": "2024-01-01T12:00:00",
             "priority": "high"
         },
         {
+            "id": "q2", 
             "question": "What is the population of San Francisco?", 
             "added": "2024-01-01T12:05:00",
             "priority": "medium"
@@ -35,6 +37,7 @@ Goal: Main research agent with memory management capabilities
     ],
     "closed_questions_complete": [
         {
+            "id": "q1",
             "question": "What is the population of NYC?",
             "answer": "8.3 million people",
             "evidence": ["Search result from census data", "NYC.gov official statistics"],
@@ -44,6 +47,7 @@ Goal: Main research agent with memory management capabilities
     ],
     "closed_questions_partial": [
         {
+            "id": "q3",
             "question": "What are the top grossing games of 2024?",
             "partial_answer": "Found data for top 3 games but revenue figures incomplete",
             "limitations": ["Exact revenue numbers not publicly available", "Only Q1-Q3 data found"],
@@ -126,13 +130,13 @@ def create_empty_research_document() -> dict:
         # List of finding objects: {"content": str, "source": str, "confidence": str, "related_questions": List[str], "timestamp": str}
         "findings": [],
 
-        # List of open question objects: {"question": str, "added": str, "priority": str}
+        # List of open question objects: {"id": str, "question": str, "added": str, "priority": str}
         "open_questions": [],
 
-        # List of fully answered questions: {"question": str, "answer": str, "evidence": List[str], "confidence": str, "closed": str}
+        # List of fully answered questions: {"id": str, "question": str, "answer": str, "evidence": List[str], "confidence": str, "closed": str}
         "closed_questions_complete": [],
 
-        # List of partially answered questions: {"question": str, "partial_answer": str, "limitations": List[str], "available_evidence": List[str], "confidence": str, "closed": str}
+        # List of partially answered questions: {"id": str, "question": str, "partial_answer": str, "limitations": List[str], "available_evidence": List[str], "confidence": str, "closed": str}
         "closed_questions_partial": [],
 
         # List of unsuccessful searches: {"query": str, "source": str, "reason": str, "partial_info": str, "potential_followups": List[str], "related_questions": List[str], "timestamp": str}
@@ -461,6 +465,9 @@ def memory_agent_reasoner_node(state: AgentState) -> AgentState:
     - ADD_OPEN_QUESTION: Add a new research question to investigate
     - ADD_FINDING: Store helpful search results and findings
     - LOG_UNHELPFUL_SEARCH: Track searches that didn't yield useful results
+    - CLOSE_QUESTION_COMPLETE: Mark an open question as fully answered
+    - CLOSE_QUESTION_PARTIAL: Mark an open question as partially answered with limitations
+    - MEMORY_REFLECTION: Analyze patterns and generate insights from research document
     - CONCLUDE_MEMORY_PROCESSING: Finish memory processing and return to orchestrator
     """
 
@@ -508,6 +515,9 @@ Available operations:
 - ADD_OPEN_QUESTION: Add a new research question to track
 - ADD_FINDING: Store helpful search results and findings  
 - LOG_UNHELPFUL_SEARCH: Track searches that didn't yield useful results
+- CLOSE_QUESTION_COMPLETE: Mark an open question as fully answered
+- CLOSE_QUESTION_PARTIAL: Mark an open question as partially answered with limitations
+- MEMORY_REFLECTION: Analyze patterns and generate insights from research document
 - CONCLUDE_MEMORY_PROCESSING: Finish memory processing and return to orchestrator
 
 Respond with your decision in this format:
@@ -532,6 +542,23 @@ Reason: No specific revenue data available
 Partial_info: Found general industry estimates
 Potential_followups: industry estimates Fortnite revenue
 Related_questions: What are the top grossing games?
+
+OPERATION: CLOSE_QUESTION_COMPLETE
+DETAILS: Question_id: q_a1b2c3d4
+Answer: The population of NYC is 8.3 million people
+Evidence: Census data 2024, NYC.gov official statistics
+Confidence: high
+
+OPERATION: CLOSE_QUESTION_PARTIAL
+DETAILS: Question_id: q_b2c3d4e5
+Partial_answer: Found data for top 3 games but revenue figures incomplete
+Limitations: Exact revenue numbers not publicly available, Only Q1-Q3 data found
+Available_evidence: Gaming industry reports, Partial financial data
+Confidence: medium
+
+OPERATION: MEMORY_REFLECTION
+DETAILS: Focus: patterns
+Analyze current research state for patterns, gaps, and next steps
 
 OPERATION: CONCLUDE_MEMORY_PROCESSING
 DETAILS: Finished processing search results and updating research document"""
@@ -560,6 +587,12 @@ def memory_operation_router(state: AgentState) -> str:
         return "log_unhelpful_search_node"
     elif "add_finding" in content:
         return "add_finding_node"
+    elif "close_question_complete" in content:
+        return "close_question_complete_node"
+    elif "close_question_partial" in content:
+        return "close_question_partial_node"
+    elif "memory_reflection" in content:
+        return "memory_reflection_node"
     elif "conclude_memory_processing" in content:
         return "conclude_memory_processing_node"
 
@@ -596,9 +629,12 @@ def add_open_question_node(state: AgentState) -> AgentState:
                 break
 
     if question:
-        # Create structured question object
+        # Create structured question object with unique ID
+        import uuid
         from datetime import datetime
         question_obj = {
+            # Short unique ID like "q_a1b2c3d4"
+            "id": f"q_{str(uuid.uuid4())[:8]}",
             "question": question,
             "added": datetime.now().isoformat(),
             "priority": priority
@@ -748,6 +784,222 @@ def add_finding_node(state: AgentState) -> AgentState:
         return {
             "messages": [AIMessage(content=error_message)]
         }
+
+
+@traceable
+def close_question_complete_node(state: AgentState) -> AgentState:
+    """Move an open question to closed_questions_complete with full answer"""
+
+    # Extract the question details from the executor's decision
+    last_message = state["messages"][-1]
+    content = last_message.content
+
+    # Parse the DETAILS section
+    question_id = ""
+    answer = ""
+    evidence = []
+    confidence = "medium"  # Default confidence
+
+    if "DETAILS:" in content:
+        details_part = content.split("DETAILS:")[1].strip()
+        lines = details_part.split("\n")
+
+        for line in lines:
+            line = line.strip()
+            if line.lower().startswith("question_id:"):
+                question_id = line.split(":", 1)[1].strip()
+            elif line.lower().startswith("answer:"):
+                answer = line.split(":", 1)[1].strip()
+            elif line.lower().startswith("evidence:"):
+                evidence_text = line.split(":", 1)[1].strip()
+                evidence = [e.strip()
+                            for e in evidence_text.split(",") if e.strip()]
+            elif line.lower().startswith("confidence:"):
+                confidence = line.split(":", 1)[1].strip().lower()
+
+    if question_id and answer:
+        # Find and remove the question from open_questions
+        open_questions = state["research_document"]["open_questions"]
+        question_to_move = None
+
+        for i, q in enumerate(open_questions):
+            if q.get("id") == question_id:
+                question_to_move = open_questions.pop(i)
+                break
+
+        if question_to_move:
+            # Create closed question object
+            from datetime import datetime
+            closed_question_obj = {
+                "id": question_id,
+                "question": question_to_move["question"],
+                "answer": answer,
+                "evidence": evidence,
+                "confidence": confidence,
+                "closed": datetime.now().isoformat()
+            }
+
+            # Add to closed_questions_complete
+            closed_questions = state["research_document"]["closed_questions_complete"]
+            closed_questions.append(closed_question_obj)
+
+            result_message = f"✅ Closed question completely: '{question_to_move['question'][:50]}...'"
+            print(f"   📝 {result_message}")
+
+            return {
+                "messages": [AIMessage(content=result_message)]
+            }
+        else:
+            error_message = f"❌ Could not find open question with ID: {question_id}"
+            print(f"   📝 {error_message}")
+            return {
+                "messages": [AIMessage(content=error_message)]
+            }
+    else:
+        error_message = "❌ Could not extract question_id and answer from executor decision"
+        print(f"   📝 {error_message}")
+        return {
+            "messages": [AIMessage(content=error_message)]
+        }
+
+
+@traceable
+def close_question_partial_node(state: AgentState) -> AgentState:
+    """Move an open question to closed_questions_partial with partial answer"""
+
+    # Extract the question details from the executor's decision
+    last_message = state["messages"][-1]
+    content = last_message.content
+
+    # Parse the DETAILS section
+    question_id = ""
+    partial_answer = ""
+    limitations = []
+    available_evidence = []
+    confidence = "medium"  # Default confidence
+
+    if "DETAILS:" in content:
+        details_part = content.split("DETAILS:")[1].strip()
+        lines = details_part.split("\n")
+
+        for line in lines:
+            line = line.strip()
+            if line.lower().startswith("question_id:"):
+                question_id = line.split(":", 1)[1].strip()
+            elif line.lower().startswith("partial_answer:"):
+                partial_answer = line.split(":", 1)[1].strip()
+            elif line.lower().startswith("limitations:"):
+                limitations_text = line.split(":", 1)[1].strip()
+                limitations = [l.strip()
+                               for l in limitations_text.split(",") if l.strip()]
+            elif line.lower().startswith("available_evidence:"):
+                evidence_text = line.split(":", 1)[1].strip()
+                available_evidence = [
+                    e.strip() for e in evidence_text.split(",") if e.strip()]
+            elif line.lower().startswith("confidence:"):
+                confidence = line.split(":", 1)[1].strip().lower()
+
+    if question_id and partial_answer:
+        # Find and remove the question from open_questions
+        open_questions = state["research_document"]["open_questions"]
+        question_to_move = None
+
+        for i, q in enumerate(open_questions):
+            if q.get("id") == question_id:
+                question_to_move = open_questions.pop(i)
+                break
+
+        if question_to_move:
+            # Create closed partial question object
+            from datetime import datetime
+            closed_question_obj = {
+                "id": question_id,
+                "question": question_to_move["question"],
+                "partial_answer": partial_answer,
+                "limitations": limitations,
+                "available_evidence": available_evidence,
+                "confidence": confidence,
+                "closed": datetime.now().isoformat()
+            }
+
+            # Add to closed_questions_partial
+            closed_questions = state["research_document"]["closed_questions_partial"]
+            closed_questions.append(closed_question_obj)
+
+            result_message = f"✅ Closed question partially: '{question_to_move['question'][:50]}...'"
+            print(f"   📝 {result_message}")
+
+            return {
+                "messages": [AIMessage(content=result_message)]
+            }
+        else:
+            error_message = f"❌ Could not find open question with ID: {question_id}"
+            print(f"   📝 {error_message}")
+            return {
+                "messages": [AIMessage(content=error_message)]
+            }
+    else:
+        error_message = "❌ Could not extract question_id and partial_answer from executor decision"
+        print(f"   📝 {error_message}")
+        return {
+            "messages": [AIMessage(content=error_message)]
+        }
+
+
+@traceable
+def memory_reflection_node(state: AgentState) -> AgentState:
+    """Analyze patterns across research document and generate insights"""
+
+    # Extract reflection request from the executor's decision
+    last_message = state["messages"][-1]
+    content = last_message.content
+
+    # Parse the DETAILS section for reflection focus
+    reflection_focus = "general"  # Default
+
+    if "DETAILS:" in content:
+        details_part = content.split("DETAILS:")[1].strip()
+        lines = details_part.split("\n")
+
+        for line in lines:
+            line = line.strip()
+            if line.lower().startswith("focus:"):
+                reflection_focus = line.split(":", 1)[1].strip().lower()
+                break
+
+    # Get current research document for analysis
+    doc = state.get("research_document", {})
+
+    # Build reflection prompt
+    reflection_prompt = f"""
+    You are the Memory Agent's reflection system. Analyze the current research document and provide insights.
+    
+    Current Research Document: {doc}
+    
+    Reflection Focus: {reflection_focus}
+    
+    Analyze the research document and provide insights on:
+    1. **Patterns**: What patterns do you see across findings, questions, and searches?
+    2. **Gaps**: What important questions or areas are missing?
+    3. **Connections**: How do findings relate to each other?
+    4. **Next Steps**: What should be prioritized based on current state?
+    5. **Quality Assessment**: How complete and reliable is our current knowledge?
+    
+    Provide a concise but insightful analysis focusing on actionable observations.
+    """
+
+    # Generate reflection insights
+    reflection_response = llm.invoke(
+        [SystemMessage(content=reflection_prompt)])
+    insights = reflection_response.content
+
+    result_message = f"🧠 Memory Reflection Complete: Generated insights on research patterns and gaps"
+    print(f"   📝 {result_message}")
+    print(f"   🔍 Insights: {insights[:100]}...")  # Show first 100 chars
+
+    return {
+        "messages": [AIMessage(content=f"{result_message}\n\nInsights:\n{insights}")]
+    }
 
 
 @traceable
@@ -944,6 +1196,9 @@ graph.add_node("memory_agent_executor", memory_agent_executor_node)
 graph.add_node("add_open_question_node", add_open_question_node)
 graph.add_node("log_unhelpful_search_node", log_unhelpful_search_node)
 graph.add_node("add_finding_node", add_finding_node)
+graph.add_node("close_question_complete_node", close_question_complete_node)
+graph.add_node("close_question_partial_node", close_question_partial_node)
+graph.add_node("memory_reflection_node", memory_reflection_node)
 graph.add_node("conclude_memory_processing_node",
                conclude_memory_processing_node)
 
@@ -968,6 +1223,9 @@ graph.add_conditional_edges("memory_agent_executor", memory_operation_router, {
     "add_open_question_node": "add_open_question_node",
     "log_unhelpful_search_node": "log_unhelpful_search_node",
     "add_finding_node": "add_finding_node",
+    "close_question_complete_node": "close_question_complete_node",
+    "close_question_partial_node": "close_question_partial_node",
+    "memory_reflection_node": "memory_reflection_node",
     "conclude_memory_processing_node": "conclude_memory_processing_node",
     "orchestrator_reasoner": "orchestrator_reasoner"
 })
@@ -975,6 +1233,9 @@ graph.add_conditional_edges("memory_agent_executor", memory_operation_router, {
 graph.add_edge("add_open_question_node", "memory_agent_reasoner")
 graph.add_edge("log_unhelpful_search_node", "memory_agent_reasoner")
 graph.add_edge("add_finding_node", "memory_agent_reasoner")
+graph.add_edge("close_question_complete_node", "memory_agent_reasoner")
+graph.add_edge("close_question_partial_node", "memory_agent_reasoner")
+graph.add_edge("memory_reflection_node", "memory_agent_reasoner")
 # Conclude goes back to orchestrator (EXIT from memory processing)
 graph.add_edge("conclude_memory_processing_node", "orchestrator_reasoner")
 
